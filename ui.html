@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 12px; font: 12px/1.4 Inter, -apple-system, "Apple SD Gothic Neo", sans-serif; color: #222; }
+  h1 { font-size: 13px; margin: 0 0 8px; }
+  .row { display: flex; gap: 6px; margin-bottom: 8px; }
+  button { font: inherit; padding: 6px 10px; border: 1px solid #ccc; background: #fff; border-radius: 6px; cursor: pointer; }
+  button.primary { background: #0d99ff; border-color: #0d99ff; color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  #items { border: 1px solid #e5e5e5; border-radius: 6px; max-height: 150px; overflow: auto; margin-bottom: 8px; }
+  .item { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .item:last-child { border-bottom: 0; }
+  .item.sel { background: #e8f4ff; }
+  .item img { width: 32px; height: 32px; object-fit: cover; border-radius: 3px; background: #eee; }
+  .item input[type=text] { flex: 1; min-width: 0; border: 1px solid #ddd; border-radius: 4px; padding: 3px 5px; font: inherit; }
+  .item select { font: inherit; max-width: 96px; }
+  .item select.bg { max-width: 58px; }
+  .item .x { padding: 0 6px; border: 0; color: #999; }
+  .status { font-size: 10px; color: #888; width: 52px; }
+  #stage { border: 1px solid #e5e5e5; border-radius: 6px; background: #f6f6f6; padding: 6px; text-align: center; margin-bottom: 8px; }
+  canvas { max-width: 100%; cursor: crosshair; background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0/12px 12px; }
+  .hint { color: #888; font-size: 11px; margin: 0 0 6px; }
+  label.chk { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+  #log { border-top: 1px solid #eee; padding-top: 8px; white-space: pre-wrap; font-size: 11px; max-height: 150px; overflow: auto; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid #e5e5e5; }
+  .tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 10px; color: #888; }
+  .tab.on { color: #0d99ff; border-bottom-color: #0d99ff; font-weight: 600; }
+  .swrow { display: flex; gap: 6px; margin: 4px 0 8px; align-items: center; }
+  .sw { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #ccc; cursor: pointer; padding: 0; }
+  .sw.on { box-shadow: 0 0 0 2px #0d99ff; }
+  .gradrow { font-size: 11px; color: #555; }
+  .warn { color: #c2410c; }
+  .ok { color: #15803d; }
+  #empty { color: #999; padding: 14px; text-align: center; }
+  #banner { padding: 8px 10px; border-radius: 6px; margin-bottom: 8px; font-size: 11px; line-height: 1.45; background: #fff4e5; color: #9a3412; border: 1px solid #fed7aa; }
+  #banner.err { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+  #banner.ok { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+</style>
+</head>
+<body>
+<h1>공동구매 이미지 생성기 <small style="font-weight:400;color:#888">v3.0 · 이미지 + 카드 그라데이션</small></h1>
+<div class="tabs"><button class="tab on" id="tabBtn1">이미지 만들기</button><button class="tab" id="tabBtn2">카드 그라데이션</button></div>
+<div id="banner" hidden></div>
+<div id="tab1">
+<div class="row">
+  <button id="btnFile">이미지 파일 추가</button>
+  <button id="btnSel">Figma 선택 가져오기</button>
+  <input id="file" type="file" accept="image/*" multiple hidden>
+</div>
+
+<div id="items"><div id="empty">이미지를 추가하세요 (파일 선택 또는 Figma에서 선택)</div></div>
+
+<div id="namePreview" class="hint" style="white-space:pre-wrap"></div>
+<p class="hint">미리보기에서 드래그해서 <b>오브젝트(제품) 영역</b>을 지정하세요. 투명 배경이면 자동 감지됩니다.</p>
+<div id="stage"><canvas id="cv" width="380" height="240"></canvas></div>
+<div class="row">
+  <button id="btnAuto" disabled>자동 감지</button>
+  <button id="btnCenter" disabled>중앙 70%로</button>
+</div>
+
+<div id="setup">
+  <div class="row" style="margin-bottom:4px">
+    <button id="btnSetup">이 Sample을 UI 템플릿으로 지정</button>
+    <button id="btnShow">템플릿 위치 보기</button>
+  </div>
+  <p class="hint" style="margin-bottom:4px">UI 화면(공동구매/추천/상세/빅배너)이 <b>모두</b> 들어 있는 Sample 프레임이나 그 안의 레이어를 Figma에서 선택하고 누르세요. 한 번 지정하면 저장됩니다.</p>
+  <div id="setupStatus" class="hint">설정 확인 중…</div>
+</div>
+
+<label class="chk"><input type="checkbox" id="rmbg" checked> 2번(상세) 배경 제거 → 흰 배경 (이미지 테두리에서 배경색을 지움)</label>
+<label class="chk"><input type="checkbox" id="preview" checked> UI 화면 미리보기 생성 (복사본에 새 이미지 적용)</label>
+<label class="chk"><input type="checkbox" id="card" checked> 1번(390) 옆에 카드 시안 + 그라데이션 만들기 (332×390)</label>
+<label class="chk"><input type="checkbox" id="guides" checked> 안전 영역/UI 오버레이 가이드 표시 (_guides 그룹)</label>
+<div class="row"><button id="btnClear">가이드 모두 지우기</button></div>
+<button id="btnGo" class="primary" disabled style="width:100%">컴포넌트 생성 + UI 미리보기</button>
+<div id="gradResults"></div>
+<div id="log"></div>
+</div>
+
+<div id="tab2" hidden>
+  <p class="hint">Figma에서 <b>1번 컴포넌트(…1) 또는 이미지 레이어</b>를 선택하고 <b>색 분석</b>을 누르세요. 카드(332×390) 아래쪽 색을 뽑아 AA 대비를 만족하는 어두운 색 5개를 보여줍니다. 색을 누르면 선택한 이미지로 카드 시안을 만들어 그라데이션을 적용하고, 이미 만든 카드가 있으면 그 카드의 그라데이션만 바꿉니다.</p>
+  <button id="btnGrab" class="primary" style="width:100%;margin-bottom:8px">선택한 이미지에서 색 분석</button>
+  <div id="grad2"></div>
+  <div class="hint">이미 만든 카드 프레임을 선택하고 색을 누르면 그 카드에 바로 적용됩니다. 결과는 3배수 PNG로 내보내세요.</div>
+</div>
+
+<script>
+
+// ---------- 카드 그라데이션: 색 분석 (gonggu-gradient 플러그인 방식) ----------
+function relLum(r, g, b) { var s = function (v) { v /= 255; return v <= .03928 ? v / 12.92 : Math.pow((v + .055) / 1.055, 2.4); }; return .2126 * s(r) + .7152 * s(g) + .0722 * s(b); }
+function contrastW(c) { var l = relLum(c[0], c[1], c[2]); return 1.05 / (l + .05); }
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  var max = Math.max(r, g, b), min = Math.min(r, g, b), h = 0, s = 0, l = (max + min) / 2;
+  if (max !== min) { var d = max - min; s = l > .5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0); else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h /= 6; }
+  return [h, s, l];
+}
+function hsl2rgb(h, s, l) {
+  function f(p, q, t) { if (t < 0) t += 1; if (t > 1) t -= 1; if (t < 1 / 6) return p + (q - p) * 6 * t; if (t < 1 / 2) return q; if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6; return p; }
+  if (s === 0) { var v = Math.round(l * 255); return [v, v, v]; }
+  var q = l < .5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
+  return [Math.round(f(p, q, h + 1 / 3) * 255), Math.round(f(p, q, h) * 255), Math.round(f(p, q, h - 1 / 3) * 255)];
+}
+function darken(c, maxL) { var h = rgb2hsl(c[0], c[1], c[2]); return h[2] <= maxL ? c : hsl2rgb(h[0], h[1], maxL); }
+function kmeans(px, k, iters) {
+  var cen = []; for (var i = 0; i < k; i++) cen.push(px[Math.floor(i * px.length / k)].slice());
+  var cnt = new Array(k).fill(0);
+  for (var it = 0; it < iters; it++) {
+    var sum = cen.map(function () { return [0, 0, 0, 0]; });
+    for (var p = 0; p < px.length; p++) {
+      var best = 0, bd = 1e18;
+      for (var j = 0; j < k; j++) { var d = (px[p][0] - cen[j][0]) * (px[p][0] - cen[j][0]) + (px[p][1] - cen[j][1]) * (px[p][1] - cen[j][1]) + (px[p][2] - cen[j][2]) * (px[p][2] - cen[j][2]); if (d < bd) { bd = d; best = j; } }
+      sum[best][0] += px[p][0]; sum[best][1] += px[p][1]; sum[best][2] += px[p][2]; sum[best][3]++;
+    }
+    for (var j2 = 0; j2 < k; j2++) { cnt[j2] = sum[j2][3]; if (sum[j2][3]) cen[j2] = [sum[j2][0] / sum[j2][3], sum[j2][1] / sum[j2][3], sum[j2][2] / sum[j2][3]]; }
+  }
+  return cen.map(function (c, i) { return { color: c.map(Math.round), count: cnt[i] }; }).sort(function (a, b) { return b.count - a.count; });
+}
+// 카드(332×390)에 cover로 맞춘 뒤 40~65% 구간(그라데이션이 시작되는 높이)의 색을 본다
+function analyzeColors(img) {
+  var W = 332, H = 390, c = document.createElement('canvas'); c.width = W; c.height = H;
+  var x = c.getContext('2d', { willReadFrequently: true });
+  var s = Math.max(W / img.naturalWidth, H / img.naturalHeight), dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+  x.drawImage(img, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  var y0 = Math.round(H * .4), hh = Math.round(H * .25), d = x.getImageData(0, y0, W, hh).data, px = [];
+  for (var i = 0; i < d.length; i += 16) if (d[i + 3] > 200) px.push([d[i], d[i + 1], d[i + 2]]);
+  if (px.length < 20) { // 제품만 있는 투명 이미지: 전체에서 불투명 픽셀을 본다
+    var d2 = x.getImageData(0, 0, W, H).data; px = [];
+    for (var j = 0; j < d2.length; j += 16) if (d2[j + 3] > 60) px.push([d2[j], d2[j + 1], d2[j + 2]]);
+  }
+  if (px.length < 20) return [[30, 30, 34]]; // 그래도 없으면 기본 어두운 색
+  var cl = kmeans(px, 12, 12), out = [];
+  for (var pass = 0; pass < 2 && out.length < 5; pass++) {
+    for (var k = 0; k < cl.length && out.length < 5; k++) {
+      var col = darken(cl[k].color, .34);
+      if (contrastW(col) < 4.5) continue;
+      var th = pass === 0 ? 30 : 12, dup = out.some(function (o) { return Math.sqrt(Math.pow(o[0] - col[0], 2) + Math.pow(o[1] - col[1], 2) + Math.pow(o[2] - col[2], 2)) < th; });
+      if (!dup) out.push(col);
+    }
+  }
+  return out;
+}
+function bytesToImg(bytes, cb) {
+  var im = new Image(); var url = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }));
+  im.onload = function () { cb(im); }; im.src = url;
+}
+// 스와치 행 그리기. getTarget(): 현재 카드 id (없으면 선택 레이어)
+function drawSwatches(el, colors, state) {
+  el.innerHTML = '';
+  if (!colors.length) { el.textContent = '색을 뽑지 못했습니다 (이미지가 투명하거나 너무 작음)'; el.className = 'hint warn'; return; }
+  var row = document.createElement('div'); row.className = 'swrow';
+  var badge = document.createElement('span'); badge.className = 'hint'; badge.style.margin = '0 0 0 6px';
+  colors.forEach(function (col, i) {
+    var b = document.createElement('button'); b.className = 'sw'; b.style.background = 'rgb(' + col.join(',') + ')'; b.title = 'rgb(' + col.join(',') + ')';
+    b.onclick = function () {
+      Array.prototype.forEach.call(row.querySelectorAll('.sw'), function (n) { n.classList.remove('on'); });
+      b.classList.add('on'); badge.textContent = '✓ AA ' + contrastW(col).toFixed(1) + ':1';
+      parent.postMessage({ pluginMessage: { type: 'apply-gradient', color: col, targetId: state.targetId || null } }, '*');
+      state.color = col;
+    };
+    row.appendChild(b);
+  });
+  row.appendChild(badge); el.appendChild(row);
+  return row;
+}
+var TYPES = [
+  { id: 'horizontal', label: '가로형' },
+  { id: 'vertical', label: '세로형' },
+  { id: 'square', label: '정사각·봉지형' },
+  { id: 'bundle', label: '묶음형' },
+  { id: 'card', label: '카드형' }
+];
+var items = [];
+var selIdx = -1;
+var nextId = 1;
+
+var $ = function (id) { return document.getElementById(id); };
+var cv = $('cv'), ctx = cv.getContext('2d');
+
+function banner(text, kind) {
+  var b = $('banner');
+  b.textContent = text;
+  b.className = kind || '';
+  b.hidden = !text;
+}
+
+function log(html, cls) {
+  var d = document.createElement('div');
+  if (cls) d.className = cls;
+  d.textContent = html;
+  $('log').appendChild(d);
+  $('log').scrollTop = 1e9;
+}
+
+// ---------- 오브젝트 영역 자동 감지 ----------
+function autoDetect(img) {
+  var max = 300;
+  var sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  var w = Math.max(1, Math.round(img.naturalWidth * sc));
+  var h = Math.max(1, Math.round(img.naturalHeight * sc));
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, w, h);
+  var d = x.getImageData(0, 0, w, h).data;
+
+  function px(ix, iy) { var i = (iy * w + ix) * 4; return [d[i], d[i + 1], d[i + 2], d[i + 3]]; }
+  // 테두리 픽셀 수집
+  var border = [];
+  for (var ix = 0; ix < w; ix++) { border.push(px(ix, 0)); border.push(px(ix, h - 1)); }
+  for (var iy = 0; iy < h; iy++) { border.push(px(0, iy)); border.push(px(w - 1, iy)); }
+  var hasAlpha = border.filter(function (p) { return p[3] < 250; }).length > border.length * 0.5;
+  var med = [0, 1, 2].map(function (k) {
+    var v = border.map(function (p) { return p[k]; }).sort(function (a, b) { return a - b; });
+    return v[Math.floor(v.length / 2)];
+  });
+
+  var rows = new Array(h).fill(0), cols = new Array(w).fill(0);
+  for (var yy = 0; yy < h; yy++) {
+    for (var xx = 0; xx < w; xx++) {
+      var p = px(xx, yy);
+      var isObj;
+      if (hasAlpha) isObj = p[3] > 20;
+      else {
+        var dist = Math.sqrt(Math.pow(p[0] - med[0], 2) + Math.pow(p[1] - med[1], 2) + Math.pow(p[2] - med[2], 2));
+        isObj = dist > 48;
+      }
+      if (isObj) { rows[yy]++; cols[xx]++; }
+    }
+  }
+  var rt = Math.max(2, w * 0.015), ct = Math.max(2, h * 0.015);
+  var y0 = rows.findIndex(function (v) { return v >= rt; });
+  var y1 = h - 1 - rows.slice().reverse().findIndex(function (v) { return v >= rt; });
+  var x0 = cols.findIndex(function (v) { return v >= ct; });
+  var x1 = w - 1 - cols.slice().reverse().findIndex(function (v) { return v >= ct; });
+  if (y0 < 0 || x0 < 0 || y1 <= y0 || x1 <= x0) return null;
+  var bb = { x: x0 / sc, y: y0 / sc, w: (x1 - x0 + 1) / sc, h: (y1 - y0 + 1) / sc };
+  var area = (bb.w * bb.h) / (img.naturalWidth * img.naturalHeight);
+  if (area > 0.92 || area < 0.03) return null; // 배경과 구분 안 됨 → 수동 지정 필요
+  return { bbox: bb, mode: hasAlpha ? '투명 감지' : '배경색 감지' };
+}
+
+// 배경 종류: 'alpha'(테두리가 투명) | 'white'(테두리가 거의 순백) | 'other'(배경 있음)
+function detectBg(img) {
+  var max = 200;
+  var sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+  var w = Math.max(1, Math.round(img.naturalWidth * sc));
+  var h = Math.max(1, Math.round(img.naturalHeight * sc));
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, w, h);
+  var d = x.getImageData(0, 0, w, h).data;
+  var border = [];
+  function push(ix, iy) { var i = (iy * w + ix) * 4; border.push([d[i], d[i + 1], d[i + 2], d[i + 3]]); }
+  for (var ix = 0; ix < w; ix++) { push(ix, 0); push(ix, h - 1); }
+  for (var iy = 0; iy < h; iy++) { push(0, iy); push(w - 1, iy); }
+  var transparent = border.filter(function (p) { return p[3] < 250; }).length;
+  if (transparent > border.length * 0.5) return 'alpha';
+  var nearWhite = border.filter(function (p) { return p[0] >= 244 && p[1] >= 244 && p[2] >= 244; }).length;
+  return nearWhite >= border.length * 0.9 ? 'white' : 'other';
+}
+
+// 테두리에서 시작해 배경색과 비슷한 픽셀을 투명으로 바꾼다 (단색/완만한 그라데이션 배경용)
+function removeBg(img) {
+  var W = img.naturalWidth, H = img.naturalHeight;
+  var sc = Math.min(1, 1600 / Math.max(W, H));
+  var w = Math.max(1, Math.round(W * sc)), h = Math.max(1, Math.round(H * sc));
+  var c = document.createElement('canvas'); c.width = w; c.height = h;
+  var x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0, w, h);
+  var id = x.getImageData(0, 0, w, h), d = id.data;
+  var N = w * h, bg = new Uint8Array(N), stack = [];
+  var T = 40;
+  function col(i) { return [d[i * 4], d[i * 4 + 1], d[i * 4 + 2]]; }
+  function dist(a, b) { return Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2])); }
+  // 테두리 대표색(중앙값)
+  var bd = [];
+  for (var ix = 0; ix < w; ix++) { bd.push(col(ix)); bd.push(col((h - 1) * w + ix)); }
+  for (var iy = 0; iy < h; iy++) { bd.push(col(iy * w)); bd.push(col(iy * w + w - 1)); }
+  var ref = [0, 1, 2].map(function (k) { var v = bd.map(function (p) { return p[k]; }).sort(function (a, b) { return a - b; }); return v[v.length >> 1]; });
+  function isBg(i, from) {
+    if (d[i * 4 + 3] < 20) return true;
+    var cc = col(i);
+    return dist(cc, ref) < T || (from >= 0 && dist(cc, col(from)) < 10 && dist(cc, ref) < T * 2);
+  }
+  function seed(i) { if (!bg[i] && isBg(i, -1)) { bg[i] = 1; stack.push(i); } }
+  for (var sx = 0; sx < w; sx++) { seed(sx); seed((h - 1) * w + sx); }
+  for (var sy = 0; sy < h; sy++) { seed(sy * w); seed(sy * w + w - 1); }
+  while (stack.length) {
+    var i = stack.pop(), px = i % w, py = (i / w) | 0;
+    var nb = [];
+    if (px > 0) nb.push(i - 1); if (px < w - 1) nb.push(i + 1); if (py > 0) nb.push(i - w); if (py < h - 1) nb.push(i + w);
+    for (var k = 0; k < nb.length; k++) { var j = nb[k]; if (!bg[j] && isBg(j, i)) { bg[j] = 1; stack.push(j); } }
+  }
+  // 알파 + 가장자리 1px 부드럽게
+  var a = new Float32Array(N);
+  for (var m = 0; m < N; m++) a[m] = bg[m] ? 0 : d[m * 4 + 3] / 255;
+  var a2 = new Float32Array(N);
+  for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) {
+    var s = 0, n = 0;
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+      var nx = xx + dx, ny = yy + dy; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      s += a[ny * w + nx]; n++;
+    }
+    var idx = yy * w + xx;
+    a2[idx] = a[idx] === 0 ? Math.min(0, 0) : (a[idx] === 1 ? Math.max(s / n, 0.5) : a[idx]);
+    if (a[idx] === 0 && s / n > 0.5) a2[idx] = 0;
+  }
+  for (var q = 0; q < N; q++) d[q * 4 + 3] = Math.round(a2[q] * 255);
+  x.putImageData(id, 0, 0);
+  var out = document.createElement('canvas'); out.width = W; out.height = H;
+  var ox = out.getContext('2d'); ox.drawImage(c, 0, 0, W, H);
+  return new Promise(function (res) {
+    out.toBlob(function (b) { b.arrayBuffer().then(function (buf) { res(new Uint8Array(buf)); }); }, 'image/png');
+  });
+}
+
+function centerBox(it) {
+  var w = it.w * 0.7, h = it.h * 0.7;
+  return { x: (it.w - w) / 2, y: (it.h - h) / 2, w: w, h: h };
+}
+
+// ---------- 아이템 추가 ----------
+// 'bigbanner' 글자는 720×460 컴포넌트에만 붙는다 → 가져온 이름에 있으면 제거
+function cleanName(n) {
+  return String(n || '').normalize('NFC').replace(/[\s_\-]*(big[\s_\-]*banner|빅배너)[\s_\-]*/ig, '_').replace(/_+/g, '_').replace(/^_|_$/g, '').replace(/[0-9]$/, function (m) { return m; });
+}
+function addItem(name, bytes) {
+  name = cleanName(name);
+  var blob = new Blob([bytes]);
+  var url = URL.createObjectURL(blob);
+  var img = new Image();
+  img.onload = function () {
+    var it = { id: nextId++, name: name, objType: 'horizontal', bytes: bytes, url: url, img: img, w: img.naturalWidth, h: img.naturalHeight, bbox: null, status: '' };
+    var r = autoDetect(img);
+    if (r) { it.bbox = r.bbox; it.status = r.mode; }
+    else { it.bbox = centerBox(it); it.status = '수동 필요'; }
+    it.bgKind = detectBg(img);
+    items.push(it);
+    selIdx = items.length - 1;
+    render();
+  };
+  img.onerror = function () { log('이미지를 읽지 못했습니다: ' + name, 'warn'); };
+  img.src = url;
+}
+
+$('btnFile').onclick = function () { $('file').click(); };
+$('file').onchange = function (e) {
+  Array.prototype.forEach.call(e.target.files, function (f) {
+    f.arrayBuffer().then(function (buf) { addItem(f.name.replace(/\.[^.]+$/, ''), new Uint8Array(buf)); });
+  });
+  e.target.value = '';
+};
+$('btnSel').onclick = function () { parent.postMessage({ pluginMessage: { type: 'import-selection' } }, '*'); };
+
+// ---------- 렌더 ----------
+function render() {
+  var box = $('items');
+  box.innerHTML = '';
+  if (!items.length) { box.innerHTML = '<div id="empty">이미지를 추가하세요 (파일 선택 또는 Figma에서 선택)</div>'; }
+  items.forEach(function (it, i) {
+    var row = document.createElement('div');
+    row.className = 'item' + (i === selIdx ? ' sel' : '');
+    row.onclick = function () { selIdx = i; render(); };
+    var th = document.createElement('img'); th.src = it.url;
+    var nm = document.createElement('input'); nm.type = 'text'; nm.value = it.name; nm.placeholder = '브랜드명_상품명';
+    nm.onclick = function (e) { e.stopPropagation(); };
+    nm.oninput = function () { it.name = nm.value; if (items[selIdx] === it) updateNames(); };
+    var sel = document.createElement('select');
+    TYPES.forEach(function (t) {
+      var o = document.createElement('option'); o.value = t.id; o.textContent = t.label;
+      if (t.id === it.objType) o.selected = true; sel.appendChild(o);
+    });
+    sel.onclick = function (e) { e.stopPropagation(); };
+    sel.onchange = function () { it.objType = sel.value; };
+    var bg = document.createElement('select'); bg.className = 'bg'; bg.title = '배경 종류 (슬롯 2는 흰 배경)';
+    [['alpha', '투명'], ['white', '흰색'], ['other', '배경있음']].forEach(function (b) {
+      var o = document.createElement('option'); o.value = b[0]; o.textContent = b[1];
+      if (b[0] === it.bgKind) o.selected = true; bg.appendChild(o);
+    });
+    bg.onclick = function (e) { e.stopPropagation(); };
+    bg.onchange = function () { it.bgKind = bg.value; };
+    var st = document.createElement('span'); st.className = 'status'; st.textContent = it.status;
+    var x = document.createElement('button'); x.className = 'x'; x.textContent = '×';
+    x.onclick = function (e) {
+      e.stopPropagation();
+      items.splice(i, 1);
+      selIdx = Math.min(selIdx, items.length - 1);
+      render();
+    };
+    [th, nm, sel, bg, st, x].forEach(function (n) { row.appendChild(n); });
+    box.appendChild(row);
+  });
+  $('btnGo').disabled = !items.length;
+  $('btnAuto').disabled = $('btnCenter').disabled = selIdx < 0;
+  updateNames();
+  drawStage();
+}
+
+var SLOT_SUFFIX = ['1', '2', '3', '_bigbanner'];
+function updateNames() {
+  var it = items[selIdx];
+  var el = $('namePreview');
+  if (!it) { el.textContent = '이름을 브랜드명_상품명 형식으로 입력하세요 → 브랜드명_상품명1 / 2 / 3 / _bigbanner 컴포넌트가 만들어집니다'; return; }
+  var base = cleanName(it.name) || '브랜드명_상품명';
+  el.textContent = '컴포넌트 이름: ' + SLOT_SUFFIX.map(function (s) { return base + s; }).join('  ·  ');
+}
+
+var view = { s: 1 };
+function drawStage() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (selIdx < 0 || !items[selIdx]) return;
+  var it = items[selIdx];
+  var maxW = 380, maxH = 300;
+  var s = Math.min(maxW / it.w, maxH / it.h);
+  view.s = s;
+  cv.width = Math.round(it.w * s);
+  cv.height = Math.round(it.h * s);
+  ctx.drawImage(it.img, 0, 0, cv.width, cv.height);
+  var b = it.bbox;
+  if (b) {
+    ctx.fillStyle = 'rgba(13,153,255,0.12)';
+    ctx.fillRect(b.x * s, b.y * s, b.w * s, b.h * s);
+    ctx.strokeStyle = '#0d99ff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(b.x * s, b.y * s, b.w * s, b.h * s);
+  }
+}
+
+// ---------- 드래그로 영역 지정 ----------
+var drag = null;
+function pos(e) {
+  var r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * (cv.width / r.width) / view.s, y: (e.clientY - r.top) * (cv.height / r.height) / view.s };
+}
+cv.onmousedown = function (e) { if (selIdx < 0) return; drag = pos(e); };
+window.onmousemove = function (e) {
+  if (!drag || selIdx < 0) return;
+  var it = items[selIdx], p = pos(e);
+  var x0 = Math.max(0, Math.min(drag.x, p.x)), y0 = Math.max(0, Math.min(drag.y, p.y));
+  var x1 = Math.min(it.w, Math.max(drag.x, p.x)), y1 = Math.min(it.h, Math.max(drag.y, p.y));
+  it.bbox = { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) };
+  it.status = '수동 지정';
+  drawStage();
+};
+window.onmouseup = function () { if (drag) { drag = null; render(); } };
+
+$('btnAuto').onclick = function () {
+  var it = items[selIdx]; if (!it) return;
+  var r = autoDetect(it.img);
+  if (r) { it.bbox = r.bbox; it.status = r.mode; } else { it.bbox = centerBox(it); it.status = '수동 필요'; log('자동 감지 실패 — 배경이 단색이 아니거나 오브젝트가 구분되지 않습니다. 드래그로 지정하세요.', 'warn'); }
+  render();
+};
+$('btnCenter').onclick = function () { var it = items[selIdx]; if (!it) return; it.bbox = centerBox(it); it.status = '기본값'; render(); };
+
+// ---------- 생성 ----------
+$('btnGo').onclick = function () {
+  $('log').innerHTML = '';
+  banner('', '');
+  $('btnGo').disabled = true;
+  var rm = $('rmbg').checked;
+  Promise.all(items.map(function (it) {
+    var p = { name: cleanName(it.name), objType: it.objType, bgKind: it.bgKind, bytes: it.bytes, w: it.w, h: it.h, bbox: it.bbox };
+    var jobs = [];
+    if (rm && it.bgKind !== 'alpha') jobs.push(removeBg(it.img).then(function (b) { p.bytesB = b; }, function () {}));
+    return Promise.all(jobs).then(function () { return p; });
+  })).then(function (payload) {
+    parent.postMessage({ pluginMessage: { type: 'generate', items: payload, guides: $('guides').checked, preview: $('preview').checked, card: $('card').checked } }, '*');
+  });
+};
+
+$('btnClear').onclick = function () { parent.postMessage({ pluginMessage: { type: 'clear-guides' } }, '*'); };
+$('btnShow').onclick = function () { parent.postMessage({ pluginMessage: { type: 'show-template' } }, '*'); };
+$('btnSetup').onclick = function () { parent.postMessage({ pluginMessage: { type: 'setup-sample' } }, '*'); };
+
+var SLOT_LABELS = { A: '1(공동구매·추천)', B: '2(상세)', C: '3(오픈예정)', D: 'bigbanner' };
+function showSetup(m) {
+  var parts = ['A', 'B', 'C', 'D'].map(function (k) {
+    return (m.templates[k] ? '✓ ' : '✗ ') + SLOT_LABELS[k] + (m.templates[k] ? ' = ' + m.templates[k] : '');
+  });
+  var scr = m.screens.length ? 'UI 화면 ' + m.screens.length + '개: ' + m.screens.join(', ') : 'UI 화면 없음';
+  var src = {
+    saved: '지정한 템플릿', auto: '자동 감지 — UI 화면이 가장 많은 Sample',
+    ambiguous: '후보 ' + (m.ambiguousCount || 0) + '개라 자동으로 고르지 못함 — 직접 지정하세요',
+    none: '템플릿을 찾지 못함 — 직접 지정하세요'
+  }[m.source] || '';
+  $('setupStatus').textContent = '[' + src + ']' + (m.rootName ? '\n프레임: ' + m.rootName : '') + '\n' + parts.join('\n') + '\n' + scr;
+  $('setupStatus').style.whiteSpace = 'pre-wrap';
+  if (m.source === 'ambiguous' || m.source === 'none') banner('UI 미리보기 템플릿을 아직 정하지 못했습니다. UI 화면(공동구매/추천/상세/빅배너)이 모두 있는 Sample을 선택하고 "이 Sample을 UI 템플릿으로 지정"을 누르세요.', '');
+  else if (m.screens.length < 3) banner('지정된 템플릿에 UI 화면이 ' + m.screens.length + '개뿐입니다 (' + m.screens.join(', ') + '). 전체 화면이 있는 Sample을 지정하면 공동구매/추천/상세도 미리볼 수 있습니다.', '');
+}
+
+window.onmessage = function (e) {
+  var m = e.data && e.data.pluginMessage;
+  if (!m) return;
+  if (m.type === 'config' && m.types) { TYPES = m.types; if (m.slots) SLOT_SUFFIX = m.slots.map(function (s) { return s.suffix; }); render(); }
+  if (m.type === 'imported') addItem(m.name, new Uint8Array(m.bytes));
+  if (m.type === 'toast') { log(m.text, 'warn'); banner(m.text, /설정 완료/.test(m.text) ? 'ok' : ''); }
+  if (m.type === 'error') { log(m.text, 'warn'); banner(m.text, 'err'); $('btnGo').disabled = !items.length; }
+  if (m.type === 'setup-status') showSetup(m);
+  if (m.type === 'export-image') {
+    bytesToImg(new Uint8Array(m.bytes), function (im) {
+      drawSwatches($('grad2'), analyzeColors(im), tab2);
+    });
+  }
+  if (m.type === 'gradient-applied') {
+    if (!$('tab2').hidden) { tab2.targetId = m.targetId; banner('카드 "' + m.name + '"에 그라데이션을 적용했습니다. 다른 색을 눌러 바꿀 수 있습니다.', 'ok'); }
+  }
+  if (m.type === 'done') {
+    $('gradResults').innerHTML = '';
+    (m.cards || []).forEach(function (cd) {
+      var wrap = document.createElement('div'); wrap.className = 'gradrow';
+      var t = document.createElement('div'); t.textContent = '카드 그라데이션 · ' + cd.name; wrap.appendChild(t);
+      var holder = document.createElement('div'); wrap.appendChild(holder); $('gradResults').appendChild(wrap);
+      bytesToImg(new Uint8Array(cd.bytes), function (im) {
+        var cols = analyzeColors(im), st = { targetId: cd.id };
+        var row = drawSwatches(holder, cols, st);
+        if (cols.length && row) row.querySelector('.sw').click(); // 첫 색 자동 적용
+      });
+    });
+    $('btnGo').disabled = !items.length;
+    if (m.previewDone) {
+      var total = (m.previews || []).reduce(function (a, p) { return a + p.swapped; }, 0);
+      banner('컴포넌트 ' + m.results.length + '개와 UI 화면 ' + (m.previews || []).length + '개를 만들었습니다 (이미지 ' + total + '곳 교체). 캔버스 아래쪽 UI 화면 복사본을 확인하세요.', 'ok');
+    } else if (!m.previewRequested) banner('컴포넌트만 만들었습니다 (UI 미리보기 체크 해제됨).', '');
+    m.results.forEach(function (r) {
+      if (r.warnings.length) r.warnings.forEach(function (w) { log('[' + r.name + '] ' + w, 'warn'); });
+      else log('[' + r.name + '] OK', 'ok');
+    });
+    (m.previews || []).forEach(function (p) {
+      if (p.swapped) log('[UI] ' + p.name + ' — 이미지 ' + p.swapped + '곳 교체', 'ok');
+      else log('[UI] ' + p.name + ' — 교체된 곳 없음 (템플릿 이미지가 없는 화면)', 'warn');
+    });
+  }
+};
+
+var tab2 = { targetId: null };
+function showTab(n) {
+  $('tab1').hidden = n !== 1; $('tab2').hidden = n !== 2;
+  $('tabBtn1').className = 'tab' + (n === 1 ? ' on' : ''); $('tabBtn2').className = 'tab' + (n === 2 ? ' on' : '');
+}
+$('tabBtn1').onclick = function () { showTab(1); };
+$('tabBtn2').onclick = function () { showTab(2); };
+$('btnGrab').onclick = function () { $('grad2').innerHTML = '분석 중…'; tab2.targetId = null; parent.postMessage({ pluginMessage: { type: 'export-selection' } }, '*'); };
+
+
+render();
+</script>
+</body>
+</html>
